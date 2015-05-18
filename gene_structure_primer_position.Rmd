@@ -1,0 +1,274 @@
+---
+title: "How to draw gene structure graph and mapping primer position/direction?"
+output: html_document
+---
+################
+##      ver0.4 
+## by Kazunari Nozue
+################
+* ver0.2 is OK version.
+* needs to fix inconsistent strand color between geen structure and primers (050715)
+* idea1: use all TxDx object to draw and specify gene or primers by "which" arguments that should be GRange object (ver0.3)
+* idea2: combine all GR object and convert them into GRL. 
+
+# preparation
+```{r eval=FALSE} 
+# run this section once
+# preparation
+source("http://bioconductor.org/biocLite.R")
+biocLite(ggbio)
+# making Arabidopsis thaliana TxDb package
+library("org.At.tair.db")
+class(org.At.tair.db)
+# columns(org.At.tair.db) # http://www.bioconductor.org/help/workflows/annotation/annotation/
+# keytypes(org.At.tair.db)
+# ids<-head(keys(org.At.tair.db, keytype="ENTREZID"))
+# select(org.At.tair.db, keys=ids, columns="SYMBOL", keytype="ENTREZID")
+
+ TxDb.At<-makeTxDbFromGFF("/Volumes/Data8/NGS_related/Arabidopsis_analysis/reference/TAIR10_GFF3_genes.gff",format="gff3",organism="Arabidopsis thaliana")
+ makeTxDbPackage(txdb=TxDb.At,
+                 version="1.0.0",
+                maintainer="Kazunari Nozue <knozue@ucavis.edu>",
+                author="Kazunari Nozue",
+                destDir="/Volumes/Data6/bioconductor_R")
+system("tar -zcvf TxDb.Athaliana.tar.gz TxDb.Athaliana") #in /Volumes/Data6/bioconductor_R
+install.packages("/Volumes/Data6/bioconductor_R/TxDb.Athaliana.tar.gz", repos = NULL, type = "source")
+```
+
+# primer design and get position information in a genome
+Use http://www.ncbi.nlm.nih.gov/tools/primer-blast/
+* Enter AGI name in NCBI > gene
+* click "graphic" at the top
+* Fing mRNA name on the bottom (eg. )
+* Click the mRNA name.
+* click "graphic"
+* click "tools" in the tool bar and go to primer-NCBI
+* enter primer sequences and run primer-NCBI
+* You should have PCR region within mRNA
+
+
+```{r eval=TRUE}
+setwd("/Volumes/Data6/data_JM4/qRT-PCR_2015/primer_position")
+library("TxDb.Athaliana", lib.loc="/Library/Frameworks/R.framework/Versions/3.2/Resources/library")
+library(ggbio)
+library(biovizBase)
+# cf http://www.tengfei.name/ggbio/docs/man/autoplot-method.html
+
+### making general funciton ######
+
+primer.info<-data.frame(primername=c("oJM1000","oJM1001"),
+                        AGI=c("AT1G01060","AT1G01060"),
+                        Chr=c("Chr1","Chr1"),
+                        start=c(34000,34970),
+                        end=c(34030,35000),
+                        strand=c("+","-"),
+                        pairedprimer=c("oJM1001","oJM1000"),
+                        gPCRsize=c("1000","1000"),
+                        RTPCRsize=c("800","800")                        
+                            )
+# PP2A primers
+primer.info<-data.frame(primername=c("oJM703","oJM702"),
+                        AGI=c("AT1G13320","AT1G13320"),
+                        Chr=c("Chr1","Chr1"),
+                        start=c(4563986,4563800),
+                        end=c(4564006,4563811),
+                        start2=c("N/A",4563928),
+                        end2=c("N/A",4563935),
+                        strand=c("-","+"),
+                        pairedprimer=c("oJM703","oJM702"),
+                        gPCRsize=c("61","61"),
+                        RTPCRsize=c("61","61")                        
+                            )
+
+# read primer info file
+primer.info<-read.csv("/Volumes/Data6/data_JM4/paper manuscript_data_JM4/timecourseSASRNAseq/primer.info2015timecourseSAS.csv")
+
+
+primer.info[1:2,] #you can select primer of interest here
+unique(primer.info[1:2,"AGI"]) # this should be only one AGI
+
+primer.gene.plot<-function(primers,AGI,ratio=9) {
+  # making primer GRange object
+  # add primer info for AT1G01060 (fake primers)
+  primer1 <- GRanges(paste("Chr",primers[1,"Chr"],sep=""), IRanges(primers[1,"start"], primers[1,"end"]),strand=as.character(primers[1,"strand"]),tx_id="",tx_name=primers[1,"primername"],gene_id=primers[1,"AGI"],model="primer")
+  primer2 <- GRanges(paste("Chr",primers[2,"Chr"],sep=""), IRanges(primers[2,"start"], primers[2,"end"]),strand=as.character(primers[2,"strand"]),tx_id="",tx_name=primers[2,"primername"],gene_id=primers[2,"AGI"],model="primer") 
+  # if primer is splitted
+  if(!primers[1,"start2"]=="N/A")  {
+        print(primers[1,])
+    primer1b<-GRanges(paste("Chr",primers[1,"Chr"],sep=""), IRanges(as.numeric(as.character(primers[1,"start2"])), as.numeric(as.character(primers[1,"end2"]))),strand=as.character(primers[1,"strand"]),tx_id="",tx_name=primers[1,"primername"],gene_id=primers[1,"AGI"],model="primer")
+    primer1<-c(primer1,primer1b)
+    }
+  if(!primers[2,"start2"]=="N/A")  {
+    print(primers[2,])
+      primer2b<-GRanges(paste("Chr",primers[2,"Chr"],sep=""), IRanges(as.numeric(as.character(primers[2,"start2"])), as.numeric(as.character(primers[2,"end2"]))),strand=as.character(primers[2,"strand"]),tx_id="",tx_name=primers[2,"primername"],gene_id=primers[2,"AGI"],model="primer")
+    primer2<-c(primer2,primer2b)
+    }
+  primers.temp<-c(primer1,primer2) #GRange object
+  #print(strand(primers.temp))
+  print(primers.temp) 
+  #primers.df<-as.data.frame(ranges(primers.temp))
+  print(primers)
+  #primers$strand<-relevel(primers$strand,ref="+") # relevel does not work
+  # strand(primers.temp)<-c("+","-","*") # this is not appropriate
+  #print(str(primers))
+  #print(rownames(primers.df))
+  # extracting gene structure information
+  transcripts.Athaliana.selected.temp<-transcripts(TxDb.Athaliana,vals<-list(gene_id=AGI))
+  gr.Athaliana.temp <- crunch(TxDb.Athaliana,which=transcripts.Athaliana.selected.temp)
+  ## change column to 'model'
+  colnames(values(gr.Athaliana.temp))[4] <- "model"
+  # level of strand Rle object
+  # strand(gr.Athaliana.temp)<-c("+","-","*") # see http://web.mit.edu/r_v3.0.1/lib/R/library/BiocGenerics/html/strand.html
+  # this is not appropriate
+  # into GRL
+  grl.Athaliana.temp <- split(gr.Athaliana.temp, gr.Athaliana.temp$tx_name)
+  # print 
+  print(grl.Athaliana.temp)
+  # plot gene structure
+  p.temp<-autoplot(grl.Athaliana.temp,aes(type=model,fill=strand))
+  # plot primer (color of text and arrows are opposit. Use primers.tem for text? 050815)
+  p.primer<-ggplot() + geom_text(data=primers,aes(x=start,y=c(1.5,0.5),label=primername,size=0.5,color=strand)) + scale_y_continuous(limits=c(0.25,2)) 
+  p.primer<- p.primer + geom_arrowrect(primers.temp,aes(fill=strand,y=100),arrow.head=1,rect.height=0.4) 
+  
+  # merge plots
+  lst <- list(time1 = p.temp, time2 = p.primer)
+  names(lst)<-c(as.character(AGI),"primer")
+  cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+  cbbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+  #q<-tracks(lst,heights = c(ratio, 1)) 
+  q<-tracks(lst,heights = c(ratio, 1)) + scale_fill_manual(values=cbbPalette) + scale_colour_manual(values=cbbPalette) # strand info is different from gene structure and primer.... (050715)
+  q<-q + theme(axis.text.y=element_blank(),panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+               panel.background = element_blank(), axis.line.y = element_line(colour = "white"),
+               axis.ticks.y=element_line(color="white"))#,
+               #legend.position = "none")
+  return(q)
+  
+} # this function retunrs ggplot object
+```
+# PP2A
+```{r echo=FALSE}
+p<-primer.gene.plot.v0.4(primers=primer.info[1:2,], AGI=unique(primer.info[1:2,"AGI"]))
+p
+setwd("/Volumes/Data8/NGS_related/Arabidopsis_analysis/SAS_muts_time_course_RNAseq2_mycomp")
+ggsave("PP2A_primer_position.png",height=4,width=11,dpi=300,units="in")
+```
+# AT5G15710
+```{r echo=FALSE}
+p<-primer.gene.plot.v0.4(primers=primer.info[3:4,], AGI=unique(primer.info[3:4,"AGI"]))
+p
+setwd("/Volumes/Data8/NGS_related/Arabidopsis_analysis/SAS_muts_time_course_RNAseq2_mycomp")
+ggsave("AT5G15710_primer_position.png",height=2,width=11,dpi=300,units="in")
+```
+# AT2G28390
+```{r echo=FALSE}
+p<-primer.gene.plot(primers=primer.info[5:6,], AGI=unique(primer.info[5:6,"AGI"]),ratio=2)
+p
+setwd("/Volumes/Data8/NGS_related/Arabidopsis_analysis/SAS_muts_time_course_RNAseq2_mycomp")
+ggsave("AT2G28390_primer_position.png",height=2,width=11,dpi=300,units="in")
+
+```
+# AT5G22570
+```{r echo=FALSE}
+p<-primer.gene.plot(primers=primer.info[7:8,], AGI=unique(primer.info[7:8,"AGI"]),ratio=2)
+p
+setwd("/Volumes/Data8/NGS_related/Arabidopsis_analysis/SAS_muts_time_course_RNAseq2_mycomp")
+ggsave("AT5G22570_primer_position.png",height=2,width=11,dpi=300,units="in")
+
+```
+# AT4G31800
+```{r echo=FALSE}
+p<-primer.gene.plot(primers=primer.info[9:10,], AGI=unique(primer.info[9:10,"AGI"]),ratio=2)
+p
+setwd("/Volumes/Data8/NGS_related/Arabidopsis_analysis/SAS_muts_time_course_RNAseq2_mycomp")
+ggsave("AT4G31800_primer_position.png",height=2,width=11,dpi=300,units="in")
+
+```
+# AT5G63790
+```{r echo=FALSE}
+p<-primer.gene.plot(primers=primer.info[11:12,], AGI=unique(primer.info[11:12,"AGI"]),ratio=2)
+p
+setwd("/Volumes/Data8/NGS_related/Arabidopsis_analysis/SAS_muts_time_course_RNAseq2_mycomp")
+ggsave("AT5G63790_primer_position.png",height=2,width=11,dpi=300,units="in")
+
+```
+# AT4G13180
+```{r echo=FALSE}
+p<-primer.gene.plot(primers=primer.info[13:14,], AGI=unique(primer.info[13:14,"AGI"]),ratio=2)
+p
+setwd("/Volumes/Data8/NGS_related/Arabidopsis_analysis/SAS_muts_time_course_RNAseq2_mycomp")
+ggsave("AT4G13180_primer_position.png",height=2,width=11,dpi=300,units="in")
+
+```
+
+
+# ver0.3 funciton (050915)
+#transcripts.Athaliana.selected.temp<-transcripts(TxDb.Athaliana,vals<-list(gene_id=AGI))
+#gr.Athaliana.temp <- crunch(TxDb.Athaliana,which=transcripts.Athaliana.selected.temp)
+#autoplot(TxDb.Athaliana,which=gr.Athaliana.temp,aes(type=model,fill=strand)) 
+#autoplot(TxDb.Athaliana,which=gr.Athaliana.temp,aes(type=model),fill=strand) # this is not what I want
+# autoplot(TxDb.Athaliana,aes(type=model,fill=strand))
+
+```{r eval=TRUE}
+# ver0.4 function
+# combine gene structure and primer as one GRL object
+primer.gene.plot.v0.4<-function(primers,AGI) {
+  # making primer GRange object 
+  primers$primername<-as.character(primers$primername)
+  # add primer info for AT1G01060 (fake primers)
+  primer1 <- GRanges(paste("Chr",primers[1,"Chr"],sep=""), IRanges(primers[1,"start"], primers[1,"end"]),strand=as.character(primers[1,"strand"]),tx_id="",tx_name=primers[1,"primername"],gene_id=primers[1,"AGI"],model="utr")
+  primer2 <- GRanges(paste("Chr",primers[2,"Chr"],sep=""), IRanges(primers[2,"start"], primers[2,"end"]),strand=as.character(primers[2,"strand"]),tx_id="",tx_name=primers[2,"primername"],gene_id=primers[2,"AGI"],model="utr") 
+  # if primer is splitted
+  if(!primers[1,"start2"]=="N/A")  {
+        print(primers[1,])
+    primer1b<-GRanges(paste("Chr",primers[1,"Chr"],sep=""), IRanges(as.numeric(as.character(primers[1,"start2"])), as.numeric(as.character(primers[1,"end2"]))),strand=as.character(primers[1,"strand"]),tx_id="",tx_name=primers[1,"primername"],gene_id=primers[1,"AGI"],model="utr")
+    primer1<-c(primer1,primer1b)
+    }
+  if(!primers[2,"start2"]=="N/A")  {
+    print(primers[2,])
+      primer2b<-GRanges(paste("Chr",primers[2,"Chr"],sep=""), IRanges(as.numeric(as.character(primers[2,"start2"])), as.numeric(as.character(primers[2,"end2"]))),strand=as.character(primers[2,"strand"]),tx_id="",tx_name=primers[2,"primername"],gene_id=primers[2,"AGI"],model="utr")
+    primer2<-c(primer2,primer2b)
+    }
+  primers.temp<-c(primer1,primer2) #GRange object
+  #print(strand(primers.temp))
+  print(primers.temp) 
+#
+ transcripts.Athaliana.selected.temp<-transcripts(TxDb.Athaliana,vals<-list(gene_id=AGI))
+  gr.Athaliana.temp <- crunch(TxDb.Athaliana,which=transcripts.Athaliana.selected.temp)
+  ## change column to 'model'
+  colnames(values(gr.Athaliana.temp))[4] <- "model"
+  # into GRL
+  gr.Athaliana.primer.temp<-c(gr.Athaliana.temp,primers.temp)
+  # into GRL
+  grl.Athaliana.primer.temp <- split(gr.Athaliana.primer.temp, gr.Athaliana.primer.temp$tx_name)
+  # print 
+  print(grl.Athaliana.primer.temp)
+  # plot
+  cbbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+    strand.color <- c("magenta", "black", "green")
+
+
+  q<-autoplot(grl.Athaliana.primer.temp,aes(type=model,fill=strand))+ scale_fill_manual(values= strand.color) 
+  q<-q + theme(axis.text.y=element_blank(),panel.grid.major = element_blank(), panel.grid.minor =           element_blank(), 
+               panel.background = element_blank(), axis.line.y = element_line(colour = "white"),
+               axis.ticks.y=element_line(color="white"))#,
+               #legend.position = "none")
+  return(q)
+}
+```
+# plot all genes in primer.info table
+```{r}
+setwd("/Volumes/Data6/data_JM4/qRT-PCR_2015/primer_position")
+AGI.levels<-unique(primer.info[3:38,"AGI"])
+for(x in AGI.levels) {
+  r<-primer.gene.plot.v0.4(primers=primer.info[primer.info$AGI==x,],AGI=x)
+  splicing.varians<-transcripts.Athaliana.selected.temp<-transcripts(TxDb.Athaliana,vals<-list(gene_id=x))
+print(paste(x,"_primer_position.v0.4.png",sep=""))
+  ggsave(file=paste(x,"_primer_position.v0.4.png",sep=""),height=length(splicing.varians$tx_name)+1,width=8,dpi=300,units="in")
+}
+
+```
+
+```{r}
+sessionInfo()
+```
+
