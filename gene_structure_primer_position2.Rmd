@@ -82,7 +82,7 @@ primer.gene.plot.v0.4<-function(primers,AGI) {
   #print(strand(primers.temp))
   print(primers.temp) 
 #
- transcripts.Athaliana.selected.temp<-transcripts(TxDb.Athaliana,vals<-list(gene_id=AGI))
+ transcripts.Athaliana.selected.temp<-transcripts(TxDb.Athaliana,filter=list(gene_id=AGI))
   gr.Athaliana.temp <- crunch(TxDb.Athaliana,which=transcripts.Athaliana.selected.temp)
   ## change column to 'model'
   colnames(values(gr.Athaliana.temp))[4] <- "model"
@@ -111,7 +111,7 @@ setwd("/Volumes/Data6/data_JM4/qRT-PCR_2015/primer_position")
 AGI.levels<-unique(primer.info[37:38,"AGI"])
 for(x in AGI.levels) {
   r<-primer.gene.plot.v0.4(primers=primer.info[primer.info$AGI==x,],AGI=x)
-  splicing.varians<-transcripts.Athaliana.selected.temp<-transcripts(TxDb.Athaliana,vals<-list(gene_id=x))
+  splicing.varians<-transcripts.Athaliana.selected.temp<-transcripts(TxDb.Athaliana,filter=list(gene_id=x))
 print(paste(x,"_primer_position.v0.4.png",sep=""))
   ggsave(file=paste(x,"_primer_position.v0.4.png",sep=""),height=length(splicing.varians$tx_name)+1,width=8,dpi=300,units="in")
 }
